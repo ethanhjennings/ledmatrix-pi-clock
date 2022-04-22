@@ -8,9 +8,12 @@ import requests
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 from PIL import Image
 import board
-from adafruit_bme280 import basic as bme280
-import adafruit_sgp30 as sgp30
 
+import adafruit_sht31d as sht31d
+import adafruit_sgp30 as sgp30
+import adafruit_veml7700 as veml7700
+
+SENSOR_BASELINES_FILE = "baselines.txt"
 
 EMPTY_WEATHER_DATA = {
     'temp': None,
@@ -38,22 +41,48 @@ def _map_co2_color(co2):
 
 
 def _refresh_sensor_data(sensor_queue):
+    # Load sensor baselines
+    try:
+        with open(SENSOR_BASELINES_FILE, 'r') as f:
+            eco2_baseline, tvoc_baseline = [int(b.strip()) for b in f.readline().split(",")]
+    except (FileNotFoundError, IOError, ValueError):
+        eco2_baseline, tvoc_baseline = None, None
+        print("ERROR: Unable to read baselines.txt, starting over baselines!")
+
     i2c = board.I2C()
-    temp_humid = bme280.Adafruit_BME280_I2C(i2c)
+    temp_humid = sht31d.SHT31D(i2c)
     air_sensor = sgp30.Adafruit_SGP30(i2c)
     air_sensor.iaq_init()
+    if eco2_baseline is not None and tvoc_baseline is not None:
+        air_sensor.set_iaq_baseline(eco2_baseline, tvoc_baseline)
+    light_sensor = veml7700.VEML7700(i2c)
+    
+    sensor_data = dict(EMPTY_SENSOR_DATA)
+    sensor_poll_timer = 0 # Force to trigger at startup
+    save_baseline_timer = time.time()
     while True:
-        sensor_data = dict(EMPTY_SENSOR_DATA)
-        air_sensor.set_iaq_relative_humidity(celcius=temp_humid.temperature, relative_humidity=temp_humid.humidity)
+        if time.time() - sensor_poll_timer > 10:
+            sensor_poll_timer = time.time()
 
-        sensor_data['temp'] = 9*temp_humid.temperature/5+32
-        sensor_data['humid'] = temp_humid.humidity
-        sensor_data['co2'] = air_sensor.iaq_measure()[0]
+            temp = temp_humid.temperature
+            humid = temp_humid.relative_humidity
+
+            air_sensor.set_iaq_relative_humidity(celcius=temp, relative_humidity=humid)
+            co2 = air_sensor.iaq_measure()[0]
+
+            sensor_data['temp'] = 9*temp/5+32
+            sensor_data['humid'] = humid
+            sensor_data['co2'] = co2
+            if time.time() > save_baseline_timer + 60*60:
+                save_baseline_timer = time.time()
+                with open(SENSOR_BASELINES_FILE, 'w') as f:
+                    print("Updating baselines:")
+                    print(f"baseline_co2 = {air_sensor.baseline_eCO2}, baseline_voc = {air_sensor.baseline_TVOC}")
+                    f.write(str(air_sensor.baseline_eCO2) + ',' + str(air_sensor.baseline_TVOC) + '\n')
+
+        sensor_data['light'] = light_sensor.light
         sensor_queue.put(sensor_data)
-        print(f"baseline_co2 = {air_sensor.baseline_eCO2}, baseline_voc = {air_sensor.baseline_TVOC}")
-        with open('baselines.txt', 'a') as f:
-            f.write(str(air_sensor.baseline_eCO2) + ', ' + str(air_sensor.baseline_TVOC) + '\n')
-        time.sleep(10)
+        time.sleep(0.3)
     
 
 def _refresh_internet_data(weather_queue):
