@@ -31,6 +31,29 @@ EMPTY_SENSOR_DATA = {
     'co2': None,
 }
 
+WEATHER_ICONS_PATH = 'resources/weather_icons/'
+
+WEATHER_ICONS = {
+    '01d': 'clear_day.png',
+    '01n': 'clear_night.png',
+    '02d': 'day_few_clouds.png',
+    '02n': 'night_few_clouds.png',
+    '03d': 'scattered_clouds.png',
+    '03n': 'scattered_clouds.png',
+    '04d': 'broken_clouds.png',
+    '04n': 'broken_clouds.png',
+    '09d': 'shower_rain.png',
+    '09n': 'shower_rain.png',
+    '10d': 'rain.png',
+    '10n': 'rain.png',
+    '11d': 'thunderstorm.png',
+    '11n': 'thunderstorm.png',
+    '13d': 'snow.png',
+    '13n': 'snow.png',
+    '50d': 'mist.png',
+    '50n': 'mist.png',
+}
+
 def _map_co2_color(co2):
     if co2 < 1000: 
         return (0, 255, 0) 
@@ -96,8 +119,8 @@ def _refresh_internet_data(weather_queue):
                 weather_data['temp']      = data['main']['temp']
                 weather_data['low_temp']  = data['main']['temp_min']
                 weather_data['high_temp'] = data['main']['temp_max']
-                weather_data['humid']  = data['main']['humidity']
-                weather_data['icon']      = data['weather']['icon']
+                weather_data['humid']     = data['main']['humidity']
+                weather_data['icon']      = data['weather'][0]['icon']
             except:
                 pass
 
@@ -142,6 +165,11 @@ class LEDClock:
         self.high_temp_img = Image.open('resources/symbol_icons/high_temp.png').convert('RGB')
         self.low_temp_img = Image.open('resources/symbol_icons/low_temp.png').convert('RGB')
 
+        self.weather_icons = {}
+        for icon_id, filename in WEATHER_ICONS.items():
+            self.weather_icons[icon_id] = Image.open(WEATHER_ICONS_PATH + filename).convert('RGB')
+
+
         self.weather_data = dict(EMPTY_WEATHER_DATA)
         self.weather_queue = multiprocessing.Queue()
 
@@ -185,6 +213,8 @@ class LEDClock:
         if hours > 12:
             hours -= 12
             am = False
+        if hours == 0:
+            hours = 12
 
         hours = str(hours).rjust(2, ' ')
         minutes = str(now.minute).rjust(2, '0')
@@ -195,7 +225,7 @@ class LEDClock:
 
         graphics.DrawText(canvas, self.time_font,  -6, 20, self.white, f'{hours}:{minutes}')
         graphics.DrawText(canvas, self.small_font, 37, 19, self.white, f'{seconds}')
-        graphics.DrawText(canvas, self.date_font,   5, 26, self.white, f'{weekday} {month}')
+        graphics.DrawText(canvas, self.date_font,   3, 26, self.white, f'{weekday} {month}')
         graphics.DrawText(canvas, self.small_font, 37, 26, self.white, f'{days}')
 
         inside_temp, inside_temp_color     = self._format_weather_datapoint(self.sensor_data['temp'], 2, True)
@@ -227,7 +257,9 @@ class LEDClock:
             graphics.DrawText(canvas, self.am_pm_font, 45, 18, self.pm_color, 'P')
 
         # Draw weather icon
-        canvas.SetImage(self.weather_img, 37, 1)
+        if self.weather_data['icon'] is not None:
+            icon = self.weather_icons[self.weather_data['icon']]
+            canvas.SetImage(icon, 37, 1)
         
         # Draw symbol icons
         canvas.SetImage(self.inside_humid_img, 0, 27)
