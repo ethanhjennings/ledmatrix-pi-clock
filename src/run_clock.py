@@ -36,8 +36,8 @@ WEATHER_ICONS_PATH = 'resources/weather_icons/'
 WEATHER_ICONS = {
     '01d': 'clear_day.png',
     '01n': 'clear_night.png',
-    '02d': 'day_few_clouds.png',
-    '02n': 'night_few_clouds.png',
+    '02d': 'few_clouds_day.png',
+    '02n': 'few_clouds_night.png',
     '03d': 'scattered_clouds.png',
     '03n': 'scattered_clouds.png',
     '04d': 'broken_clouds.png',
@@ -52,6 +52,7 @@ WEATHER_ICONS = {
     '13n': 'snow.png',
     '50d': 'mist.png',
     '50n': 'mist.png',
+    'default': 'unkown.png'
 }
 
 def _map_co2_color(co2):
@@ -153,7 +154,7 @@ class LEDClock:
         self.white = graphics.Color(255, 255, 255)
         self.purple = graphics.Color(81, 0, 255)
         self.am_color = graphics.Color(255, 255, 0)
-        self.pm_color = graphics.Color(91, 72, 255)
+        self.pm_color = graphics.Color(120, 120, 255)
 
         self.weather_img = Image.open('resources/weather_icons/mist.png').convert('RGB')
         self.inside_humid_img = Image.open('resources/symbol_icons/inside_humid.png').convert('RGB')
@@ -257,10 +258,12 @@ class LEDClock:
             graphics.DrawText(canvas, self.am_pm_font, 45, 18, self.pm_color, 'P')
 
         # Draw weather icon
-        if self.weather_data['icon'] is not None:
+        if self.weather_data['icon'] in self.weather_icons:
             icon = self.weather_icons[self.weather_data['icon']]
-            canvas.SetImage(icon, 37, 1)
-        
+        else:
+            icon = self.weather_icons['default']
+        canvas.SetImage(icon, 37, 1)
+
         # Draw symbol icons
         canvas.SetImage(self.inside_humid_img, 0, 27)
         canvas.SetImage(self.outside_humid_img, 13, 27)
