@@ -9,11 +9,17 @@ from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 from PIL import Image
 import board
 
+import json
+
 import adafruit_sht31d as sht31d
 import adafruit_sgp30 as sgp30
 import adafruit_veml7700 as veml7700
 
+CONFIG_FILE = "config.json"
 SENSOR_BASELINES_FILE = "baselines.txt"
+
+WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={key}&units=imperial"
+PURPLEAIR_API_URL = "https://ethanj.me/aqi/api?lat={lat}&lon={lon}&radius=2&correction=none"
 
 EMPTY_WEATHER_DATA = {
     'temp': None,
@@ -110,12 +116,15 @@ def _refresh_sensor_data(sensor_queue):
     
 
 def _refresh_internet_data(weather_queue):
+    with open(CONFIG_FILE) as f:
+        config = json.load(f)
+
     while True:
         weather_data = dict(EMPTY_WEATHER_DATA)
         network_error = False
 
         try:
-            r = requests.get('https://api.openweathermap.org/data/2.5/weather?lat=<YOUR LATTITUDE>&lon=<YOUR LONGITUDE>&appid=<YOUR API KEY HERE>&units=imperial')
+            r = requests.get(WEATHER_API_URL.format(lat=config['lat'], lon=config['lon'], key=config['openweather_api_key']))
             if r.status_code == 200:
                 try:
                     data = r.json()
@@ -132,7 +141,7 @@ def _refresh_internet_data(weather_queue):
 
 
         try:
-            r = requests.get('https://ethanj.me/aqi/api?lat=<YOUR LATTITUDE>&lon=<YOUR LONGITUDE>&radius=2&correction=none')
+            r = requests.get(PURPLEAIR_API_URL.format(lat=config['lat'], lon=config['lon']))
             if r.status_code == 200:
                 try:
                     data = r.json()

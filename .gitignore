@@ -1,3 +1,5 @@
+config.json
+baselines.txt
 venv/
 local_data/
 rpi-rgb-led-matrix/
