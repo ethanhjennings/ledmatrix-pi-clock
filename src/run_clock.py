@@ -112,35 +112,52 @@ def _refresh_sensor_data(sensor_queue):
 def _refresh_internet_data(weather_queue):
     while True:
         weather_data = dict(EMPTY_WEATHER_DATA)
+        network_error = False
 
-        r = requests.get('https://api.openweathermap.org/data/2.5/weather?lat=<YOUR LATTITUDE>&lon=<YOUR LONGITUDE>&appid=<YOUR API KEY HERE>&units=imperial')
-        if r.status_code == 200:
-            try:
-                data = r.json()
-                weather_data['temp']      = data['main']['temp']
-                weather_data['low_temp']  = data['main']['temp_min']
-                weather_data['high_temp'] = data['main']['temp_max']
-                weather_data['humid']     = data['main']['humidity']
-                weather_data['icon']      = data['weather'][0]['icon']
-            except:
-                pass
+        try:
+            r = requests.get('https://api.openweathermap.org/data/2.5/weather?lat=<YOUR LATTITUDE>&lon=<YOUR LONGITUDE>&appid=<YOUR API KEY HERE>&units=imperial')
+            if r.status_code == 200:
+                try:
+                    data = r.json()
+                    weather_data['temp']      = data['main']['temp']
+                    weather_data['low_temp']  = data['main']['temp_min']
+                    weather_data['high_temp'] = data['main']['temp_max']
+                    weather_data['humid']     = data['main']['humidity']
+                    weather_data['icon']      = data['weather'][0]['icon']
+                except KeyError:
+                    print("Openweather data poorly formatted!")
+        except requests.exceptions.RequestException:
+            network_error = True
+            print("Network error!")
 
-        r = requests.get('https://ethanj.me/aqi/api?lat=<YOUR LATTITUDE>&lon=<YOUR LONGITUDE>&radius=2&correction=none')
-        if r.status_code == 200:
-            try:
-                data = r.json()
-                weather_data['aqi']       = data['aqi']
-                weather_data['aqi_color'] = (data['color']['r'], data['color']['g'], data['color']['b'])
-            except:
-                pass
+
+        try:
+            r = requests.get('https://ethanj.me/aqi/api?lat=<YOUR LATTITUDE>&lon=<YOUR LONGITUDE>&radius=2&correction=none')
+            if r.status_code == 200:
+                try:
+                    data = r.json()
+                    weather_data['aqi']       = data['aqi']
+                    weather_data['aqi_color'] = (data['color']['r'], data['color']['g'], data['color']['b'])
+                except KeyError:
+                    print("Purpleair dash data poorly formatted!")
+        except requests.exceptions.RequestException:
+            print("Network error!")
 
         weather_queue.put(weather_data)
-        time.sleep(60*2)
+        if not network_error:
+            time.sleep(60*2)
+        else:
+            # Keep checking network more frequently in case it's back up
+            time.sleep(0.5)
 
 class LEDClock:
     def __init__(self):
         self.matrix = RGBMatrix(options = self._get_options())
         self.offscreen_canvas = self.matrix.CreateFrameCanvas()
+
+        self.matrix.brightness = 0
+        self.brightness = 0
+        self.target_brightness = 100
 
         self.time_font = graphics.Font()
         self.time_font.LoadFont('resources/fonts/8x20_numerics.bdf')
@@ -283,6 +300,16 @@ class LEDClock:
             self.sensor_data = self.sensor_queue.get_nowait()
         except queue.Empty:
             pass
+
+        # Update brightness
+        if self.target_brightness > self.matrix.brightness:
+            self.brightness += 0.5
+        elif self.target_brightness < self.matrix.brightness:
+            self.brightness -= 0.5
+
+        self.matrix.brightness = round(self.brightness)
+
+
         self.offscreen_canvas = self.matrix.SwapOnVSync(self.offscreen_canvas)
         end_loop = time.time() - start_loop
 
