@@ -1,15 +1,15 @@
 import time
 from datetime import datetime
-import sys
-import multiprocessing
+import json
 import queue
+import multiprocessing
+import sys
 
 import requests
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 from PIL import Image
 import board
-
-import json
+import socketio
 
 import adafruit_sht31d as sht31d
 import adafruit_sgp30 as sgp30
@@ -60,6 +60,32 @@ WEATHER_ICONS = {
     '50n': 'mist.png',
     'default': 'unkown.png'
 }
+
+def _handle_socketio(socketio_queue):
+
+    connected = False
+    while not connected:
+        try:
+            sio = socketio.Client()
+            sio.connect('http://localhost')
+            connected = True
+        except socketio.exceptions.ConnectionError:
+            pass
+        time.sleep(1)
+
+    state = {'enabled': True, 'brightness': 100}
+
+    @sio.on('display_state')
+    def message(data):
+        nonlocal state
+        state = data
+        socketio_queue.put(state)
+
+    # Mechanism to get state to state-less flask server when a new javascript client connnects
+    @sio.on('get_state')
+    def get_state():
+        nonlocal state
+        sio.emit('display_state', state)
 
 def _map_co2_color(co2):
     if co2 < 1000: 
@@ -165,6 +191,7 @@ class LEDClock:
         self.offscreen_canvas = self.matrix.CreateFrameCanvas()
 
         self.matrix.brightness = 0
+        self.enabled = True
         self.brightness = 0
         self.target_brightness = 100
 
@@ -203,11 +230,16 @@ class LEDClock:
         self.sensor_data = dict(EMPTY_SENSOR_DATA)
         self.sensor_queue = multiprocessing.Queue()
 
+        self.socketio_queue = multiprocessing.Queue()
+
         self.internet_process = multiprocessing.Process(target=_refresh_internet_data, args=[self.weather_queue])
         self.internet_process.start()
 
         self.sensor_process = multiprocessing.Process(target=_refresh_sensor_data, args=[self.sensor_queue])
         self.sensor_process.start()
+
+        self.socketio_process = multiprocessing.Process(target=_handle_socketio, args=[self.socketio_queue])
+        self.socketio_process.start()
 
     def _get_options(self):
         options = RGBMatrixOptions()
@@ -310,15 +342,25 @@ class LEDClock:
         except queue.Empty:
             pass
 
+        try:
+            state = self.socketio_queue.get_nowait()
+            self.enabled = state['enabled']
+            if self.enabled:
+                self.target_brightness = float(state['brightness'])
+            else:
+                self.target_brightness = 0
+        except queue.Empty:
+            pass
+
         # Update brightness
-        if self.target_brightness > self.matrix.brightness:
-            self.brightness += 0.5
-        elif self.target_brightness < self.matrix.brightness:
-            self.brightness -= 0.5
+        if self.target_brightness > self.brightness:
+            self.brightness += 2.0
+            self.brightness = min(self.brightness, 100)
+        elif self.target_brightness < self.brightness:
+            self.brightness -= 2.0
+            self.brightness = max(self.brightness, 0)
 
-        self.matrix.brightness = round(self.brightness)
-
-
+        self.matrix.brightness = self.brightness
         self.offscreen_canvas = self.matrix.SwapOnVSync(self.offscreen_canvas)
         end_loop = time.time() - start_loop
 
