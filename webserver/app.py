@@ -4,7 +4,7 @@ from flask import Flask, send_file, send_from_directory, g
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-socketio = SocketIO(app)# logger=True, engineio_logger=True, log_output=True)
+socketio = SocketIO(app, always_connect=True)
 
 @app.route('/')
 def root():
