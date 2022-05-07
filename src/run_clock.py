@@ -366,7 +366,6 @@ class LEDClock:
         self.matrix.brightness = self.brightness
         self.offscreen_canvas = self.matrix.SwapOnVSync(self.offscreen_canvas)
         end_loop = time.time() - start_loop
-        print(end_loop)
 
     def run(self):
         try:
