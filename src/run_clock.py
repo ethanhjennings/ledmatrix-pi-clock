@@ -7,7 +7,8 @@ import sys
 
 import requests
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
-from PIL import Image
+from PIL import Image, ImageOps
+from bdfparser import Font
 import board
 import socketio
 
@@ -199,8 +200,8 @@ class LEDClock:
         self.time_font.LoadFont('resources/fonts/8x20_numerics.bdf')
         self.small_font = graphics.Font()
         self.small_font.LoadFont('resources/fonts/3x5_numerics.bdf')
-        self.date_font = graphics.Font()
-        self.date_font.LoadFont('resources/fonts/4x5_text.bdf')
+        self.date_font = Font('resources/fonts/4x5_text.bdf')
+
         self.am_pm_font = graphics.Font()
         self.am_pm_font.LoadFont('resources/fonts/am_pm.bdf')
 
@@ -279,13 +280,15 @@ class LEDClock:
         minutes = str(now.minute).rjust(2, '0')
         seconds = str(now.second).rjust(2, '0')
         weekday = str(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'][now.weekday()])
-        month = str(['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][now.month-1])
+        month = str(['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][now.month - 1])
         days = str(now.day)
 
         graphics.DrawText(canvas, self.time_font,  -6, 20, self.white, f'{hours}:{minutes}')
         graphics.DrawText(canvas, self.small_font, 37, 19, self.white, f'{seconds}')
-        graphics.DrawText(canvas, self.date_font,   3, 26, self.white, f'{weekday} {month}')
-        graphics.DrawText(canvas, self.small_font, 37, 26, self.white, f'{days}')
+        byte_img = self.date_font.draw(f'{weekday} {month} {days}')
+        img = ImageOps.invert(Image.frombytes('RGB', (byte_img.width(), byte_img.height()), byte_img.tobytes('RGB'))).convert('RGB')
+        center_x = 25
+        canvas.SetImage(img, center_x - byte_img.width()//2, 21)
 
         inside_temp, inside_temp_color     = self._format_weather_datapoint(self.sensor_data['temp'], 2, True)
         outside_temp, outside_temp_color   = self._format_weather_datapoint(self.weather_data['temp'], 2, True)
@@ -363,6 +366,7 @@ class LEDClock:
         self.matrix.brightness = self.brightness
         self.offscreen_canvas = self.matrix.SwapOnVSync(self.offscreen_canvas)
         end_loop = time.time() - start_loop
+        print(end_loop)
 
     def run(self):
         try:
