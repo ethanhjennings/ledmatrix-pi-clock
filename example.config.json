@@ -1,5 +1,5 @@
 {
-    "lat": "<CHANGE TO YOUR LATTITUDE>",
-    "lon": "<CHANGE TO YOUR LONGITUDE>",
+    "lat": <CHANGE TO YOUR LATTITUDE>,
+    "lon": <CHANGE TO YOUR LONGITUDE>,
     "openweather_api_key": "<CHANGE TO YOUR API KEY>"
 }

@@ -5,6 +5,7 @@ import queue
 import multiprocessing
 import sys
 
+import ephem
 import requests
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 from PIL import Image, ImageOps
@@ -191,6 +192,9 @@ class LEDClock:
         self.matrix = RGBMatrix(options = self._get_options())
         self.offscreen_canvas = self.matrix.CreateFrameCanvas()
 
+        with open(CONFIG_FILE) as f:
+            self.config = json.load(f)
+
         self.matrix.brightness = 0
         self.enabled = True
         self.brightness = 0
@@ -210,7 +214,6 @@ class LEDClock:
         self.am_color = graphics.Color(255, 255, 0)
         self.pm_color = graphics.Color(120, 120, 255)
 
-        self.weather_img = Image.open('resources/weather_icons/mist.png').convert('RGB')
         self.inside_humid_img = Image.open('resources/symbol_icons/inside_humid.png').convert('RGB')
         self.outside_humid_img = Image.open('resources/symbol_icons/outside_humid.png').convert('RGB')
         self.co2_img = Image.open('resources/symbol_icons/co2.png').convert('RGB')
@@ -219,6 +222,8 @@ class LEDClock:
         self.outside_temp_img = Image.open('resources/symbol_icons/outside_temp.png').convert('RGB')
         self.high_temp_img = Image.open('resources/symbol_icons/high_temp.png').convert('RGB')
         self.low_temp_img = Image.open('resources/symbol_icons/low_temp.png').convert('RGB')
+        self.sunrise_img = Image.open('resources/symbol_icons/sunrise.png').convert('RGB')
+        self.sunset_img = Image.open('resources/symbol_icons/sunset.png').convert('RGB')
 
         self.weather_icons = {}
         for icon_id, filename in WEATHER_ICONS.items():
@@ -249,6 +254,29 @@ class LEDClock:
         options.gpio_slowdown = 3
         options.drop_privileges = False
         return options
+
+
+    def _get_sun_set_rise_time(self):
+        ''' Get either the sunrise or sunset time depending on which is sooner '''
+
+        def to_degrees_str(decimal):
+            minutes = 60*(decimal - int(decimal))
+            seconds = 60*(minutes - int(minutes))
+            return f"{int(decimal)}:{int(minutes)}:{seconds}"
+
+        o = ephem.Observer()
+        o.lat = to_degrees_str(self.config['lat'])
+        o.long = to_degrees_str(self.config['lon'])
+        o.date = datetime.utcnow()
+
+        sun = ephem.Sun(o)
+        sunrise = ephem.localtime(o.next_rising(sun))
+        sunset = ephem.localtime(o.next_setting(sun))
+
+        if sunrise < sunset:
+            return sunrise, True
+        else:
+            return sunset, False
 
     def _format_weather_datapoint(self, datapoint, size, leading_space=False):
         if datapoint is not None:
@@ -293,13 +321,15 @@ class LEDClock:
         inside_temp, inside_temp_color     = self._format_weather_datapoint(self.sensor_data['temp'], 2, True)
         outside_temp, outside_temp_color   = self._format_weather_datapoint(self.weather_data['temp'], 2, True)
         high_temp, high_temp_color         = self._format_weather_datapoint(self.weather_data['high_temp'], 2, True)
-        low_temp,  low_temp_color          = self._format_weather_datapoint(self.weather_data['low_temp'], 2, True)
         outside_humid, outside_humid_color = self._format_weather_datapoint(self.weather_data['humid'], 2)
         inside_humid, inside_humid_color   = self._format_weather_datapoint(self.sensor_data['humid'], 2)
 
+        sun_time, is_sunrise = self._get_sun_set_rise_time()
+        sun_time = sun_time.strftime("%-H:%M")
+        sun_time_icon = self.sunrise_img if is_sunrise else self.sunset_img
+
         co2, _                             = self._format_weather_datapoint(self.sensor_data['co2'], 4)
         co2_color = graphics.Color(*_map_co2_color(self.sensor_data['co2'])) if self.sensor_data['co2'] is not None else self.purple
-
 
         aqi, _                             = self._format_weather_datapoint(self.weather_data['aqi'], 3)
         aqi_color = graphics.Color(*self.weather_data['aqi_color']) if self.weather_data['aqi_color'] is not None else self.purple
@@ -307,7 +337,7 @@ class LEDClock:
         graphics.DrawText(canvas, self.small_font, 53, 5, inside_temp_color, f"{inside_temp}")
         graphics.DrawText(canvas, self.small_font, 53, 12, outside_temp_color, f"{outside_temp}")
         graphics.DrawText(canvas, self.small_font, 53, 19, high_temp_color, f"{high_temp}")
-        graphics.DrawText(canvas, self.small_font, 53, 26, low_temp_color, f"{low_temp}")
+        graphics.DrawText(canvas, self.small_font, 51, 26, self.white, f"{sun_time}")
         graphics.DrawText(canvas, self.small_font, 4, 32, outside_humid_color, f"{inside_humid}")
         graphics.DrawText(canvas, self.small_font, 17, 32, outside_humid_color, f"{outside_humid}")
         graphics.DrawText(canvas, self.small_font, 31, 32, co2_color, f"{co2}")
@@ -333,7 +363,7 @@ class LEDClock:
         canvas.SetImage(self.inside_temp_img, 49,  0)
         canvas.SetImage(self.outside_temp_img, 49, 7)
         canvas.SetImage(self.high_temp_img, 49, 14)
-        canvas.SetImage(self.low_temp_img,  49, 21)
+        canvas.SetImage(sun_time_icon, 46, 22)
 
         try:
             self.weather_data = self.weather_queue.get_nowait()
