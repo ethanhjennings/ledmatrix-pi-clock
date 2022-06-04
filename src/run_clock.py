@@ -325,7 +325,7 @@ class LEDClock:
         inside_humid, inside_humid_color   = self._format_weather_datapoint(self.sensor_data['humid'], 2)
 
         sun_time, is_sunrise = self._get_sun_set_rise_time()
-        sun_time = sun_time.strftime("%-H:%M")
+        sun_time = sun_time.strftime("%-I:%M")
         sun_time_icon = self.sunrise_img if is_sunrise else self.sunset_img
 
         co2, _                             = self._format_weather_datapoint(self.sensor_data['co2'], 4)
