@@ -1,5 +1,7 @@
 {
-    "lat": <CHANGE TO YOUR LATTITUDE>,
-    "lon": <CHANGE TO YOUR LONGITUDE>,
-    "openweather_api_key": "<CHANGE TO YOUR API KEY>"
+    "lat": 0.0,
+    "lon": 0.0,
+    "openweather_api_key": "notarealAPIkey",
+    "high_temp_start": "06:00",
+    "high_temp_end": "18:00"
 }

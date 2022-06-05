@@ -1,10 +1,12 @@
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import queue
 import multiprocessing
+import re
 import sys
 
+from dateutil.tz import tzlocal
 import ephem
 import requests
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
@@ -22,6 +24,7 @@ SENSOR_BASELINES_FILE = "baselines.txt"
 
 WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={key}&units=imperial"
 PURPLEAIR_API_URL = "https://ethanj.me/aqi/api?lat={lat}&lon={lon}&radius=2&correction=none"
+NWS_GRIDPOINT_API_URL = "https://api.weather.gov/points/{lat},{lon}"
 
 EMPTY_WEATHER_DATA = {
     'temp': None,
@@ -142,6 +145,34 @@ def _refresh_sensor_data(sensor_queue):
         sensor_queue.put(sensor_data)
         time.sleep(0.3)
     
+def _iso_to_datetime_range(iso):
+    """
+    Convert an iso date string with duration to start and end datetime objects
+    Example input: "2022-06-05T17:00:00+00:00/PT14H"
+    Returns (datetime, datetime)
+    """
+
+    try:
+        start_str, duration_str = iso.split('/')
+        start_utc = datetime.fromisoformat(start_str)
+    except ValueError:
+        return None, None
+
+    start = start_utc.astimezone(tzlocal())
+
+    match = re.match(r'PT(\d+)H', duration_str)
+    if not match:
+        return None, None
+
+    duration_hrs = match.group(1)
+
+    end = start + timedelta(hours=int(duration_hrs))
+
+    return start, end
+
+def _to_f(c):
+    ''' Convert to farenheight '''
+    return (float(c)*9/5) + 32
 
 def _refresh_internet_data(weather_queue):
     with open(CONFIG_FILE) as f:
@@ -150,6 +181,7 @@ def _refresh_internet_data(weather_queue):
     while True:
         weather_data = dict(EMPTY_WEATHER_DATA)
         network_error = False
+        nws_forecast_api_url = None
 
         try:
             r = requests.get(WEATHER_API_URL.format(lat=config['lat'], lon=config['lon'], key=config['openweather_api_key']))
@@ -157,8 +189,6 @@ def _refresh_internet_data(weather_queue):
                 try:
                     data = r.json()
                     weather_data['temp']      = data['main']['temp']
-                    weather_data['low_temp']  = data['main']['temp_min']
-                    weather_data['high_temp'] = data['main']['temp_max']
                     weather_data['humid']     = data['main']['humidity']
                     weather_data['icon']      = data['weather'][0]['icon']
                 except KeyError:
@@ -166,7 +196,6 @@ def _refresh_internet_data(weather_queue):
         except requests.exceptions.RequestException:
             network_error = True
             print("Network error!")
-
 
         try:
             r = requests.get(PURPLEAIR_API_URL.format(lat=config['lat'], lon=config['lon']))
@@ -178,6 +207,43 @@ def _refresh_internet_data(weather_queue):
                 except KeyError:
                     print("Purpleair dash data poorly formatted!")
         except requests.exceptions.RequestException:
+            network_error = True
+            print("Network error!")
+
+        if not nws_forecast_api_url:
+            try:
+                r = requests.get(NWS_GRIDPOINT_API_URL.format(lat=config['lat'], lon=config['lon']))
+                if r.status_code == 200:
+                    try:
+                        data = r.json()
+                        nws_forecast_api_url = data['properties']['forecastGridData']
+                    except KeyError:
+                        print("Error parsing NWS data")
+            except requests.exceptions.RequestException:
+                network_error = True
+                print("Network error!")
+
+        try:
+            r = requests.get(nws_forecast_api_url)
+            if r.status_code == 200:
+                try:
+                    now = datetime.now()
+                    data = r.json()
+                    now = datetime.now().astimezone(tzlocal())
+
+                    for data_point in data['properties']['minTemperature']['values']:
+                        start, end = _iso_to_datetime_range(data_point['validTime'])
+                        if end > now:
+                            weather_data['low_temp'] = _to_f(data_point['value'])
+
+                    for data_point in data['properties']['maxTemperature']['values']:
+                        start, end = _iso_to_datetime_range(data_point['validTime'])
+                        if end > now:
+                            weather_data['high_temp'] = _to_f(data_point['value'])
+                except KeyError:
+                    print("Error parsing NWS data")
+        except requests.exceptions.RequestException:
+            network_error = True
             print("Network error!")
 
         weather_queue.put(weather_data)
@@ -194,6 +260,8 @@ class LEDClock:
 
         with open(CONFIG_FILE) as f:
             self.config = json.load(f)
+        self.high_temp_start = datetime.strptime(self.config["high_temp_start"], "%H:%M").time()
+        self.high_temp_end = datetime.strptime(self.config["high_temp_end"], "%H:%M").time()
 
         self.matrix.brightness = 0
         self.enabled = True
@@ -220,8 +288,8 @@ class LEDClock:
         self.aqi_img = Image.open('resources/symbol_icons/aqi.png').convert('RGB')
         self.inside_temp_img = Image.open('resources/symbol_icons/inside_temp.png').convert('RGB')
         self.outside_temp_img = Image.open('resources/symbol_icons/outside_temp.png').convert('RGB')
-        self.high_temp_img = Image.open('resources/symbol_icons/high_temp.png').convert('RGB')
-        self.low_temp_img = Image.open('resources/symbol_icons/low_temp.png').convert('RGB')
+        self.high_temp_img = Image.open('resources/symbol_icons/high_temp-color.png').convert('RGB')
+        self.low_temp_img = Image.open('resources/symbol_icons/low_temp-color.png').convert('RGB')
         self.sunrise_img = Image.open('resources/symbol_icons/sunrise.png').convert('RGB')
         self.sunset_img = Image.open('resources/symbol_icons/sunset.png').convert('RGB')
 
@@ -321,6 +389,7 @@ class LEDClock:
         inside_temp, inside_temp_color     = self._format_weather_datapoint(self.sensor_data['temp'], 2, True)
         outside_temp, outside_temp_color   = self._format_weather_datapoint(self.weather_data['temp'], 2, True)
         high_temp, high_temp_color         = self._format_weather_datapoint(self.weather_data['high_temp'], 2, True)
+        low_temp, low_temp_color           = self._format_weather_datapoint(self.weather_data['low_temp'], 2, True)
         outside_humid, outside_humid_color = self._format_weather_datapoint(self.weather_data['humid'], 2)
         inside_humid, inside_humid_color   = self._format_weather_datapoint(self.sensor_data['humid'], 2)
 
@@ -336,12 +405,19 @@ class LEDClock:
 
         graphics.DrawText(canvas, self.small_font, 53, 5, inside_temp_color, f"{inside_temp}")
         graphics.DrawText(canvas, self.small_font, 53, 12, outside_temp_color, f"{outside_temp}")
-        graphics.DrawText(canvas, self.small_font, 53, 19, high_temp_color, f"{high_temp}")
         graphics.DrawText(canvas, self.small_font, 51, 26, self.white, f"{sun_time}")
         graphics.DrawText(canvas, self.small_font, 4, 32, outside_humid_color, f"{inside_humid}")
         graphics.DrawText(canvas, self.small_font, 17, 32, outside_humid_color, f"{outside_humid}")
         graphics.DrawText(canvas, self.small_font, 31, 32, co2_color, f"{co2}")
         graphics.DrawText(canvas, self.small_font, 53, 32, aqi_color, f"{aqi}")
+
+        now = datetime.now().time()
+        if now > self.high_temp_start and now < self.high_temp_end:
+            graphics.DrawText(canvas, self.small_font, 53, 19, high_temp_color, f"{high_temp}")
+            canvas.SetImage(self.high_temp_img, 49, 14)
+        else:
+            graphics.DrawText(canvas, self.small_font, 53, 19, low_temp_color, f"{low_temp}")
+            canvas.SetImage(self.low_temp_img, 49, 14)
 
         if (am):
             graphics.DrawText(canvas, self.am_pm_font, 45, 18, self.am_color, 'A')
@@ -362,7 +438,6 @@ class LEDClock:
         canvas.SetImage(self.aqi_img, 49, 27)
         canvas.SetImage(self.inside_temp_img, 49,  0)
         canvas.SetImage(self.outside_temp_img, 49, 7)
-        canvas.SetImage(self.high_temp_img, 49, 14)
         canvas.SetImage(sun_time_icon, 46, 22)
 
         try:
