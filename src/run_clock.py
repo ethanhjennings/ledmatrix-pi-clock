@@ -94,11 +94,11 @@ def _handle_socketio(socketio_queue):
 
 def _map_co2_color(co2):
     if co2 < 1000: 
-        return (0, 255, 0) 
+        return (96, 208, 62) # green
     elif co2 < 2000: 
-        return (255, 255, 0) 
+        return (245, 253, 84) # yellow
     else: 
-        return (255, 0, 0) 
+        return (234, 51, 36) # red
 
 
 def _refresh_sensor_data(sensor_queue):
