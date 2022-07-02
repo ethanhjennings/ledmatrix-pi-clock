@@ -1,0 +1,11 @@
+Adafruit_Blinka==6.13.0
+adafruit_circuitpython_sgp30==2.4.0
+adafruit_circuitpython_sht31d==2.3.10
+adafruit_circuitpython_veml7700==1.1.10
+bdfparser==2.2.0
+board==1.0
+gevent_socketio==0.3.6
+Pillow==9.2.0
+pyephem==9.99
+python_dateutil==2.8.2
+requests==2.21.0
