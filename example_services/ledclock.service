@@ -1,0 +1,13 @@
+[Unit]
+Description=ledclock matrix driver script
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=root
+ExecStart=bash -c "cd /home/pi/ledmatrix-pi-clock && python3 src/run_clock.py"
+
+[Install]
+WantedBy=multi-user.target
