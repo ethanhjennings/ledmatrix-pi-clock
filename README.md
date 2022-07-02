@@ -36,7 +36,9 @@ Run the clock from the root of the project:
 sudo python3 src/run_clock.py
 ```
 
-I like to run this as a service so it persists between reboots. I put the service files at this path: `/etc/systemd/system/...`. [You can see my examples here]( https://github.com/ethanhjennings/ledmatrix-pi-clock/tree/main/example_services)
+I like to run this as a service so it persists between reboots. I put the service files at this path: `/etc/systemd/system/...`.
+
+[You can see my examples here]( https://github.com/ethanhjennings/ledmatrix-pi-clock/tree/main/example_services)
 
 and run it with:
 ```
